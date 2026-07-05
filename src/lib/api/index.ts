@@ -50,6 +50,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(input),
       }),
+    update: (id: number, input: Partial<AnnotationInput>) =>
+      apiFetch<Annotation>(`/api/annotations/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
     remove: (id: number) => apiFetch<void>(`/api/annotations/${id}/`, { method: "DELETE" }),
   },
 };

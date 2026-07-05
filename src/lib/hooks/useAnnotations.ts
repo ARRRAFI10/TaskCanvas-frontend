@@ -54,6 +54,39 @@ export function useCreateAnnotation(imageId: number | null) {
   });
 }
 
+export function useUpdateAnnotation(imageId: number | null) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<AnnotationInput> }) =>
+      api.annotations.update(id, input),
+    onMutate: async ({ id, input }) => {
+      await queryClient.cancelQueries({ queryKey: ["annotations", imageId] });
+      const previous = queryClient.getQueryData<Annotation[]>(["annotations", imageId]);
+      if (previous) {
+        queryClient.setQueryData(
+          ["annotations", imageId],
+          previous.map((annotation) =>
+            annotation.id === id ? { ...annotation, ...input } : annotation,
+          ),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["annotations", imageId], context.previous);
+      }
+      toast({
+        title: "Couldn't update the polygon",
+        description: "Your change was rolled back.",
+        variant: "error",
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["annotations", imageId] }),
+  });
+}
+
 export function useDeleteAnnotation(imageId: number | null) {
   const queryClient = useQueryClient();
   const { toast } = useToast();

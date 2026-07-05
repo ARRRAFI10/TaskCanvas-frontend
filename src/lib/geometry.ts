@@ -1,0 +1,22 @@
+import type { NormalizedPoint } from "@/lib/types";
+
+/**
+ * Shoelace area of a polygon in normalized coordinates. Because x and y are
+ * both fractions of the image dimensions, the result is the fraction of the
+ * image the polygon covers (0..1); multiply by width*height for pixels².
+ */
+export function polygonAreaFraction(points: NormalizedPoint[]): number {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) / 2;
+}
+
+export function formatArea(points: NormalizedPoint[], width: number, height: number): string {
+  const fraction = polygonAreaFraction(points);
+  const pixels = Math.round(fraction * width * height);
+  return `${(fraction * 100).toFixed(1)}% · ${pixels.toLocaleString()} px²`;
+}

@@ -6,11 +6,17 @@ import { useEffect, useState } from "react";
 
 import { AnnotationList } from "@/components/annotate/AnnotationList";
 import { Filmstrip } from "@/components/annotate/Filmstrip";
+import { SelectionPanel } from "@/components/annotate/SelectionPanel";
 import { Toolbar } from "@/components/annotate/Toolbar";
 import { UploadZone } from "@/components/annotate/UploadZone";
 import { Button, Spinner } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { useAnnotations, useCreateAnnotation, useDeleteAnnotation } from "@/lib/hooks/useAnnotations";
+import {
+  useAnnotations,
+  useCreateAnnotation,
+  useDeleteAnnotation,
+  useUpdateAnnotation,
+} from "@/lib/hooks/useAnnotations";
 import { useDeleteImage, useImages, useImageUploads } from "@/lib/hooks/useImages";
 import { useAnnotateStore } from "@/lib/stores/annotateStore";
 import type { ImageItem, NormalizedPoint } from "@/lib/types";
@@ -39,6 +45,7 @@ export function AnnotateView() {
 
   const { data: annotations } = useAnnotations(activeImage?.id ?? null);
   const createAnnotation = useCreateAnnotation(activeImage?.id ?? null);
+  const updateAnnotation = useUpdateAnnotation(activeImage?.id ?? null);
   const deleteAnnotation = useDeleteAnnotation(activeImage?.id ?? null);
   const deleteImage = useDeleteImage();
 
@@ -54,6 +61,10 @@ export function AnnotateView() {
   const handleCreatePolygon = (points: NormalizedPoint[]) => {
     const { color, label } = useAnnotateStore.getState();
     createAnnotation.mutate({ points, color, label: label || undefined });
+  };
+
+  const handleUpdatePolygon = (id: number, points: NormalizedPoint[]) => {
+    if (id > 0) updateAnnotation.mutate({ id, input: { points } });
   };
 
   // Global viewer shortcuts; inputs keep their normal editing behavior.
@@ -99,6 +110,9 @@ export function AnnotateView() {
         case "v":
         case "s":
           store.setMode("select");
+          break;
+        case "h":
+          store.toggleAnnotationsVisible();
           break;
       }
     };
@@ -178,13 +192,15 @@ export function AnnotateView() {
             total={images.length}
             onNavigate={navigate}
             onCreatePolygon={handleCreatePolygon}
+            onUpdatePolygon={handleUpdatePolygon}
           />
         )}
       </div>
 
-      <aside className="flex w-full shrink-0 flex-col border-t border-border bg-surface lg:w-64 lg:border-t-0 lg:border-l">
+      <aside className="flex w-full shrink-0 flex-col border-t border-border bg-surface lg:w-64 lg:overflow-y-auto lg:border-t-0 lg:border-l">
         <Toolbar />
-        <AnnotationList imageId={activeImage?.id ?? null} />
+        <SelectionPanel image={activeImage} />
+        <AnnotationList image={activeImage} />
       </aside>
 
       <ConfirmDialog

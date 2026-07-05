@@ -1,5 +1,6 @@
 "use client";
 
+import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { ImageOff, Maximize } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +17,8 @@ const ZOOM_STEP = 1.15;
 const CLOSE_THRESHOLD_PX = 12;
 const SCROLL_COOLDOWN_MS = 140;
 
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
 interface CanvasStageProps {
   image: ImageItem;
   annotations: Annotation[];
@@ -23,6 +26,7 @@ interface CanvasStageProps {
   total: number;
   onNavigate: (delta: number) => void;
   onCreatePolygon: (points: NormalizedPoint[]) => void;
+  onUpdatePolygon: (id: number, points: NormalizedPoint[]) => void;
 }
 
 /** Loads the bitmap; render-time reset keeps status in sync with src. */
@@ -72,14 +76,20 @@ export default function CanvasStage({
   total,
   onNavigate,
   onCreatePolygon,
+  onUpdatePolygon,
 }: CanvasStageProps) {
   const { ref: containerRef, size } = useElementSize<HTMLDivElement>();
   const bitmap = useHtmlImage(image.file);
+  const imageNodeRef = useRef<Konva.Image>(null);
 
   const mode = useAnnotateStore((state) => state.mode);
   const color = useAnnotateStore((state) => state.color);
   const draftPoints = useAnnotateStore((state) => state.draftPoints);
   const selectedId = useAnnotateStore((state) => state.selectedAnnotationId);
+  const brightness = useAnnotateStore((state) => state.brightness);
+  const contrast = useAnnotateStore((state) => state.contrast);
+  const showAnnotations = useAnnotateStore((state) => state.showAnnotations);
+  const hiddenIds = useAnnotateStore((state) => state.hiddenIds);
   const addDraftPoint = useAnnotateStore((state) => state.addDraftPoint);
   const clearDraft = useAnnotateStore((state) => state.clearDraft);
   const setSelected = useAnnotateStore((state) => state.setSelected);
@@ -88,7 +98,16 @@ export default function CanvasStage({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null); // image px
   const [hoverId, setHoverId] = useState<number | null>(null);
+  // Live geometry while a vertex is being dragged (image px)
+  const [editing, setEditing] = useState<{ id: number; points: { x: number; y: number }[] } | null>(
+    null,
+  );
   const lastScrollRef = useRef(0);
+
+  // Konva filters need the node cached once the bitmap is on the canvas.
+  useEffect(() => {
+    if (bitmap.image) imageNodeRef.current?.cache();
+  }, [bitmap.image]);
 
   // ---- viewer transform: image pixels -> stage pixels ----------------------
   const fits = size.width > 0 && size.height > 0 && image.width > 0;
@@ -112,6 +131,15 @@ export default function CanvasStage({
   const denormalize = ([nx, ny]: NormalizedPoint) => ({
     x: nx * image.width,
     y: ny * image.height,
+  });
+  const normalize = (p: { x: number; y: number }): NormalizedPoint => [
+    clamp01(p.x / image.width),
+    clamp01(p.y / image.height),
+  ];
+  /** Keeps dragged vertex handles inside the image (absolute stage coords). */
+  const clampToImageAbs = (p: { x: number; y: number }) => ({
+    x: Math.min(Math.max(p.x, pos.x), pos.x + image.width * scale),
+    y: Math.min(Math.max(p.y, pos.y), pos.y + image.height * scale),
   });
 
   const resetView = () => {
@@ -161,8 +189,8 @@ export default function CanvasStage({
     clearDraft();
   };
 
-  const handleClick = (event: KonvaEventObject<MouseEvent>) => {
-    if (event.evt.button !== 0) return;
+  const handleClick = (event: KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if ("button" in event.evt && event.evt.button !== 0) return;
     const pointer = event.target.getStage()?.getPointerPosition();
     if (!pointer) return;
 
@@ -181,10 +209,7 @@ export default function CanvasStage({
       }
     }
     const imagePoint = toImagePoint(pointer);
-    addDraftPoint([
-      Math.min(1, Math.max(0, imagePoint.x / image.width)),
-      Math.min(1, Math.max(0, imagePoint.y / image.height)),
-    ]);
+    addDraftPoint(normalize(imagePoint));
   };
 
   const handleDblClick = () => {
@@ -199,7 +224,27 @@ export default function CanvasStage({
     setCursor(pointer ? toImagePoint(pointer) : null);
   };
 
+  /** Whole-polygon drag: clamp the translation so no vertex leaves the image. */
+  const handlePolygonDragEnd = (annotation: Annotation, event: KonvaEventObject<DragEvent>) => {
+    const dx = event.target.x();
+    const dy = event.target.y();
+    event.target.position({ x: 0, y: 0 });
+    const px = annotation.points.map(denormalize);
+    const xs = px.map((p) => p.x);
+    const ys = px.map((p) => p.y);
+    const clampedDx = Math.min(Math.max(dx, -Math.min(...xs)), image.width - Math.max(...xs));
+    const clampedDy = Math.min(Math.max(dy, -Math.min(...ys)), image.height - Math.max(...ys));
+    if (clampedDx === 0 && clampedDy === 0) return;
+    onUpdatePolygon(
+      annotation.id,
+      px.map((p) => normalize({ x: p.x + clampedDx, y: p.y + clampedDy })),
+    );
+  };
+
   // ---- render ----------------------------------------------------------------
+  const visibleAnnotations = showAnnotations
+    ? annotations.filter((annotation) => !hiddenIds.includes(annotation.id))
+    : [];
   const draftStagePoints = draftPoints.map(denormalize);
   const previewLine =
     mode === "draw" && cursor && draftStagePoints.length > 0
@@ -242,7 +287,9 @@ export default function CanvasStage({
             height={size.height}
             onWheel={handleWheel}
             onClick={handleClick}
+            onTap={handleClick}
             onDblClick={handleDblClick}
+            onDblTap={handleDblClick}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setCursor(null)}
           >
@@ -252,8 +299,9 @@ export default function CanvasStage({
                 y={pos.y}
                 scaleX={scale}
                 scaleY={scale}
-                draggable={mode === "select"}
+                draggable={mode === "select" && editing === null}
                 onDragEnd={(event) => {
+                  if (event.target.getClassName() !== "Group") return;
                   setPan({
                     x: event.target.x() - (size.width - image.width * scale) / 2,
                     y: event.target.y() - (size.height - image.height * scale) / 2,
@@ -261,19 +309,24 @@ export default function CanvasStage({
                 }}
               >
                 <KonvaImage
+                  ref={imageNodeRef}
                   image={bitmap.image}
                   width={image.width}
                   height={image.height}
+                  filters={[Konva.Filters.Brighten, Konva.Filters.Contrast]}
+                  brightness={brightness}
+                  contrast={contrast}
                 />
 
                 {/* Saved polygons (normalized -> image px) */}
-                {annotations.map((annotation) => {
-                  const flat = annotation.points.flatMap(([nx, ny]) => [
-                    nx * image.width,
-                    ny * image.height,
-                  ]);
+                {visibleAnnotations.map((annotation) => {
                   const isSelected = annotation.id === selectedId;
                   const isHover = annotation.id === hoverId;
+                  const points =
+                    editing?.id === annotation.id
+                      ? editing.points
+                      : annotation.points.map(denormalize);
+                  const flat = points.flatMap((p) => [p.x, p.y]);
                   return (
                     <Group key={annotation.id}>
                       <Line
@@ -287,30 +340,70 @@ export default function CanvasStage({
                         shadowBlur={isSelected || isHover ? 12 : 0}
                         shadowOpacity={0.9}
                         listening={mode === "select"}
+                        draggable={mode === "select" && isSelected && annotation.id > 0}
+                        onDragEnd={(event) => handlePolygonDragEnd(annotation, event)}
                         onClick={(event) => {
+                          event.cancelBubble = true;
+                          setSelected(annotation.id);
+                        }}
+                        onTap={(event) => {
                           event.cancelBubble = true;
                           setSelected(annotation.id);
                         }}
                         onMouseEnter={() => setHoverId(annotation.id)}
                         onMouseLeave={() => setHoverId(null)}
                       />
+                      {/* Draggable vertex handles reshape the polygon */}
                       {isSelected &&
-                        annotation.points.map((point, i) => {
-                          const p = denormalize(point);
-                          return (
-                            <Circle
-                              key={i}
-                              x={p.x}
-                              y={p.y}
-                              radius={5 / scale}
-                              fill="#0a0f14"
-                              stroke={annotation.color}
-                              strokeWidth={2}
-                              strokeScaleEnabled={false}
-                              listening={false}
-                            />
-                          );
-                        })}
+                        points.map((point, i) => (
+                          <Circle
+                            key={i}
+                            x={point.x}
+                            y={point.y}
+                            radius={5.5 / scale}
+                            fill="#0a0f14"
+                            stroke={annotation.color}
+                            strokeWidth={2}
+                            strokeScaleEnabled={false}
+                            draggable={annotation.id > 0}
+                            dragBoundFunc={clampToImageAbs}
+                            onDragStart={() =>
+                              setEditing({
+                                id: annotation.id,
+                                points: annotation.points.map(denormalize),
+                              })
+                            }
+                            onDragMove={(event) => {
+                              const { x, y } = event.target.position();
+                              setEditing((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      points: current.points.map((p, idx) =>
+                                        idx === i ? { x, y } : p,
+                                      ),
+                                    }
+                                  : current,
+                              );
+                            }}
+                            onDragEnd={(event) => {
+                              const { x, y } = event.target.position();
+                              const updated = (editing?.points ?? points).map((p, idx) =>
+                                idx === i ? { x, y } : p,
+                              );
+                              onUpdatePolygon(annotation.id, updated.map(normalize));
+                              setEditing(null);
+                            }}
+                            onMouseEnter={(event) => {
+                              const container = event.target.getStage()?.container();
+                              if (container) container.style.cursor = "move";
+                            }}
+                            onMouseLeave={(event) => {
+                              const container = event.target.getStage()?.container();
+                              if (container) container.style.cursor = "";
+                            }}
+                          />
+                        ))}
                     </Group>
                   );
                 })}
@@ -361,7 +454,7 @@ export default function CanvasStage({
             ? draftPoints.length > 0
               ? `${draftPoints.length} vertices · click first point or double-click to close · Esc cancels`
               : "click to place vertices · wheel scrolls images · Ctrl+wheel zooms"
-            : "click a polygon to select · drag to pan · Del removes"}
+            : "click to select · drag body to move · drag handles to reshape · Del removes"}
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {cursorInImage && cursor && (
