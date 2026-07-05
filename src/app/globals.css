@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
+/*
+ * TaskCanvas design tokens — dark clinical theme (PACS-viewer inspired).
+ * Single source of truth for every color, radius, and shadow in the app.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --background: #070b0f;
+  --surface: #0d141b;
+  --surface-raised: #121c26;
+  --surface-overlay: #17232f;
+
+  /* Lines */
+  --border: #1d2a37;
+  --border-strong: #2c3e51;
+
+  /* Text */
+  --foreground: #dce7f1;
+  --muted: #7f93a8;
+  --faint: #4d6072;
+
+  /* Accent — scanner cyan */
+  --accent: #22d3ee;
+  --accent-strong: #06b6d4;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --accent-glow: rgba(34, 211, 238, 0.35);
+
+  /* Semantic */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+
+  /* Task priorities */
+  --priority-low: #94a3b8;
+  --priority-medium: #60a5fa;
+  --priority-high: #fbbf24;
+  --priority-urgent: #f87171;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-priority-low: var(--priority-low);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-high: var(--priority-high);
+  --color-priority-urgent: var(--priority-urgent);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Thin, unobtrusive scrollbars fit the viewer aesthetic */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
