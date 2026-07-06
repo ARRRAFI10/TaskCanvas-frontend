@@ -11,27 +11,32 @@ export const PRESET_COLORS = [
   "#f472b6", // pink
 ] as const;
 
-export type AnnotateMode = "draw" | "select";
+/** "select" edits existing shapes; the rest are creation tools. */
+export type AnnotateTool = "select" | "polygon" | "rectangle" | "point" | "polyline";
 
 /**
  * Viewer state for /annotate. The active image is tracked by id (not index)
- * so uploads/deletions can't silently retarget the canvas. Draft polygon
- * points are normalized 0..1 — the canvas denormalizes at render time.
- * Brightness/contrast persist across images, like window/level in a PACS.
+ * so uploads/deletions can't silently retarget the canvas. Draft points are
+ * normalized 0..1 — the canvas denormalizes at render time. Display
+ * adjustments persist across the series, like window/level in a PACS.
  */
 interface AnnotateState {
   activeImageId: number | null;
-  mode: AnnotateMode;
+  tool: AnnotateTool;
   color: string;
   label: string;
   draftPoints: NormalizedPoint[];
   selectedAnnotationId: number | null;
   brightness: number; // -1..1 (Konva Brighten)
   contrast: number; // -100..100 (Konva Contrast)
+  saturation: number; // -1..1 (Konva HSL)
+  invert: boolean;
+  grayscale: boolean;
+  overlayOpacity: number; // 0..0.6 fill alpha for shapes
   showAnnotations: boolean;
   hiddenIds: number[];
   setActiveImage: (id: number | null) => void;
-  setMode: (mode: AnnotateMode) => void;
+  setTool: (tool: AnnotateTool) => void;
   setColor: (color: string) => void;
   setLabel: (label: string) => void;
   addDraftPoint: (point: NormalizedPoint) => void;
@@ -40,6 +45,10 @@ interface AnnotateState {
   setSelected: (id: number | null) => void;
   setBrightness: (value: number) => void;
   setContrast: (value: number) => void;
+  setSaturation: (value: number) => void;
+  toggleInvert: () => void;
+  toggleGrayscale: () => void;
+  setOverlayOpacity: (value: number) => void;
   resetAdjustments: () => void;
   toggleAnnotationsVisible: () => void;
   toggleHidden: (id: number) => void;
@@ -47,18 +56,22 @@ interface AnnotateState {
 
 export const useAnnotateStore = create<AnnotateState>((set) => ({
   activeImageId: null,
-  mode: "draw",
+  tool: "polygon",
   color: PRESET_COLORS[0],
   label: "",
   draftPoints: [],
   selectedAnnotationId: null,
   brightness: 0,
   contrast: 0,
+  saturation: 0,
+  invert: false,
+  grayscale: false,
+  overlayOpacity: 0.2,
   showAnnotations: true,
   hiddenIds: [],
   setActiveImage: (activeImageId) =>
     set({ activeImageId, draftPoints: [], selectedAnnotationId: null }),
-  setMode: (mode) => set({ mode, draftPoints: [], selectedAnnotationId: null }),
+  setTool: (tool) => set({ tool, draftPoints: [], selectedAnnotationId: null }),
   setColor: (color) => set({ color }),
   setLabel: (label) => set({ label }),
   addDraftPoint: (point) => set((state) => ({ draftPoints: [...state.draftPoints, point] })),
@@ -67,7 +80,12 @@ export const useAnnotateStore = create<AnnotateState>((set) => ({
   setSelected: (selectedAnnotationId) => set({ selectedAnnotationId }),
   setBrightness: (brightness) => set({ brightness }),
   setContrast: (contrast) => set({ contrast }),
-  resetAdjustments: () => set({ brightness: 0, contrast: 0 }),
+  setSaturation: (saturation) => set({ saturation }),
+  toggleInvert: () => set((state) => ({ invert: !state.invert })),
+  toggleGrayscale: () => set((state) => ({ grayscale: !state.grayscale })),
+  setOverlayOpacity: (overlayOpacity) => set({ overlayOpacity }),
+  resetAdjustments: () =>
+    set({ brightness: 0, contrast: 0, saturation: 0, invert: false, grayscale: false }),
   toggleAnnotationsVisible: () =>
     set((state) => ({ showAnnotations: !state.showAnnotations, selectedAnnotationId: null })),
   toggleHidden: (id) =>

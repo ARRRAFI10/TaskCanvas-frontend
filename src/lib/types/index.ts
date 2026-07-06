@@ -53,12 +53,16 @@ export interface ImageItem {
   uploaded_at: string;
 }
 
-/** Polygon vertices normalized to 0..1 of the image dimensions. */
+/** Vertices normalized to 0..1 of the image dimensions. */
 export type NormalizedPoint = [number, number];
+
+/** Rectangles store two opposite corners; points store a single pair. */
+export type ShapeType = "polygon" | "rectangle" | "point" | "polyline";
 
 export interface Annotation {
   id: number;
   image: number;
+  shape_type: ShapeType;
   label: string;
   color: string;
   points: NormalizedPoint[];
@@ -66,6 +70,7 @@ export interface Annotation {
 }
 
 export interface AnnotationInput {
+  shape_type?: ShapeType;
   label?: string;
   color?: string;
   points: NormalizedPoint[];

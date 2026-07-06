@@ -1,16 +1,23 @@
 "use client";
 
-import { Check, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Check, ChevronsRight, Copy, Eye, EyeOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 
-import { formatArea } from "@/lib/geometry";
+import { shapeMetric } from "@/lib/geometry";
 import { useAnnotations, useDeleteAnnotation, useUpdateAnnotation } from "@/lib/hooks/useAnnotations";
 import { PRESET_COLORS, useAnnotateStore } from "@/lib/stores/annotateStore";
-import type { ImageItem } from "@/lib/types";
+import type { Annotation, ImageItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Editor for the currently selected polygon: label, color, area, visibility. */
-export function SelectionPanel({ image }: { image: ImageItem | null }) {
+interface SelectionPanelProps {
+  image: ImageItem | null;
+  hasNext: boolean;
+  onDuplicate: (annotation: Annotation) => void;
+  onCopyToNext: (annotation: Annotation) => void;
+}
+
+/** Editor for the currently selected shape: label, color, metric, actions. */
+export function SelectionPanel({ image, hasNext, onDuplicate, onCopyToNext }: SelectionPanelProps) {
   const selectedId = useAnnotateStore((state) => state.selectedAnnotationId);
   const hiddenIds = useAnnotateStore((state) => state.hiddenIds);
   const toggleHidden = useAnnotateStore((state) => state.toggleHidden);
@@ -26,9 +33,11 @@ export function SelectionPanel({ image }: { image: ImageItem | null }) {
   return (
     <div className="flex flex-col gap-3 border-b border-border bg-surface-raised/50 p-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium tracking-wide text-accent">Selection</p>
+        <p className="text-xs font-medium tracking-wide text-accent">
+          Selection <span className="text-faint">· {selected.shape_type}</span>
+        </p>
         <p className="font-mono text-[10px] text-faint">
-          {formatArea(selected.points, image.width, image.height)}
+          {shapeMetric(selected, image.width, image.height)}
         </p>
       </div>
 
@@ -55,10 +64,29 @@ export function SelectionPanel({ image }: { image: ImageItem | null }) {
             />
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
-            aria-label={hiddenIds.includes(selected.id) ? "Show polygon" : "Hide polygon"}
+            aria-label="Duplicate shape (Ctrl+D)"
+            title="Duplicate (Ctrl+D)"
+            onClick={() => onDuplicate(selected)}
+            className="cursor-pointer rounded-md p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+          >
+            <Copy className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Copy shape to next image"
+            title={hasNext ? "Copy to next image" : "No next image"}
+            disabled={!hasNext}
+            onClick={() => onCopyToNext(selected)}
+            className="cursor-pointer rounded-md p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <ChevronsRight className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={hiddenIds.includes(selected.id) ? "Show shape" : "Hide shape"}
             onClick={() => toggleHidden(selected.id)}
             className="cursor-pointer rounded-md p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-foreground"
           >
@@ -70,7 +98,7 @@ export function SelectionPanel({ image }: { image: ImageItem | null }) {
           </button>
           <button
             type="button"
-            aria-label="Delete selected polygon"
+            aria-label="Delete selected shape"
             onClick={() => {
               deleteAnnotation.mutate(selected.id);
               setSelected(null);

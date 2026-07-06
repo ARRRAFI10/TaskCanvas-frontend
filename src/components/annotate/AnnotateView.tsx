@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
@@ -11,6 +12,8 @@ import { Toolbar } from "@/components/annotate/Toolbar";
 import { UploadZone } from "@/components/annotate/UploadZone";
 import { Button, Spinner } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
+import { api } from "@/lib/api";
 import {
   useAnnotations,
   useCreateAnnotation,
@@ -19,7 +22,8 @@ import {
 } from "@/lib/hooks/useAnnotations";
 import { useDeleteImage, useImages, useImageUploads } from "@/lib/hooks/useImages";
 import { useAnnotateStore } from "@/lib/stores/annotateStore";
-import type { ImageItem, NormalizedPoint } from "@/lib/types";
+import { useHistoryStore } from "@/lib/stores/historyStore";
+import type { Annotation, ImageItem, NormalizedPoint, ShapeType } from "@/lib/types";
 
 // Konva touches `window` at import time — it must never run on the server.
 const CanvasStage = dynamic(() => import("@/components/annotate/CanvasStage"), {
@@ -31,7 +35,11 @@ const CanvasStage = dynamic(() => import("@/components/annotate/CanvasStage"), {
   ),
 });
 
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
 export function AnnotateView() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: images, isPending, isError, refetch, isRefetching } = useImages();
   const { uploads, handleFiles } = useImageUploads();
 
@@ -42,6 +50,7 @@ export function AnnotateView() {
   const activeImage: ImageItem | null =
     images?.find((image) => image.id === activeImageId) ?? images?.[0] ?? null;
   const activeIndex = activeImage && images ? images.indexOf(activeImage) : -1;
+  const nextImage = images && activeIndex >= 0 ? (images[activeIndex + 1] ?? null) : null;
 
   const { data: annotations } = useAnnotations(activeImage?.id ?? null);
   const createAnnotation = useCreateAnnotation(activeImage?.id ?? null);
@@ -58,16 +67,109 @@ export function AnnotateView() {
     if (next) setActiveImage(next.id);
   };
 
-  const handleCreatePolygon = (points: NormalizedPoint[]) => {
+  const handleCreateShape = (points: NormalizedPoint[], shapeType: ShapeType) => {
     const { color, label } = useAnnotateStore.getState();
-    createAnnotation.mutate({ points, color, label: label || undefined });
+    createAnnotation.mutate({ points, shape_type: shapeType, color, label: label || undefined });
   };
 
-  const handleUpdatePolygon = (id: number, points: NormalizedPoint[]) => {
+  const handleUpdateShape = (id: number, points: NormalizedPoint[]) => {
     if (id > 0) updateAnnotation.mutate({ id, input: { points } });
   };
 
-  // Global viewer shortcuts; inputs keep their normal editing behavior.
+  /** Ctrl+D — same shape nudged 2% down-right, clamped into the image. */
+  const duplicateShape = (annotation: Annotation) => {
+    createAnnotation.mutate({
+      shape_type: annotation.shape_type,
+      label: annotation.label,
+      color: annotation.color,
+      points: annotation.points.map(([x, y]) => [clamp01(x + 0.02), clamp01(y + 0.02)]),
+    });
+  };
+
+  /** CVAT-style propagate: normalized coords port to any image size. */
+  const copyToNext = async (annotation: Annotation) => {
+    if (!nextImage) return;
+    try {
+      const created = await api.annotations.create(nextImage.id, {
+        shape_type: annotation.shape_type,
+        label: annotation.label,
+        color: annotation.color,
+        points: annotation.points,
+      });
+      useHistoryStore.getState().record(nextImage.id, {
+        op: "create",
+        id: created.id,
+        snapshot: {
+          shape_type: created.shape_type,
+          label: created.label,
+          color: created.color,
+          points: created.points,
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: ["annotations", nextImage.id] });
+      queryClient.invalidateQueries({ queryKey: ["images"] });
+      toast({ title: "Copied to next image", variant: "success" });
+    } catch {
+      toast({ title: "Couldn't copy the shape", variant: "error" });
+    }
+  };
+
+  // ---- undo / redo -----------------------------------------------------------
+  // Entries replay through the same mutations; the `restoring` flag stops the
+  // replay itself from being recorded as a new operation.
+  const undo = async () => {
+    const imageId = activeImage?.id;
+    if (!imageId) return;
+    const history = useHistoryStore.getState();
+    const entry = history.popUndo(imageId);
+    if (!entry) return;
+    history.setRestoring(true);
+    try {
+      if (entry.op === "create") {
+        if (entry.id > 0) await deleteAnnotation.mutateAsync(entry.id);
+        history.pushRedoRaw(imageId, entry);
+      } else if (entry.op === "delete") {
+        const created = await createAnnotation.mutateAsync(entry.snapshot);
+        entry.id = created.id; // future redo/undo targets the new row
+        history.pushRedoRaw(imageId, entry);
+      } else {
+        await updateAnnotation.mutateAsync({ id: entry.id, input: entry.before });
+        history.pushRedoRaw(imageId, entry);
+      }
+    } catch {
+      toast({ title: "Nothing to undo anymore", variant: "info" });
+    } finally {
+      useHistoryStore.getState().setRestoring(false);
+    }
+  };
+
+  const redo = async () => {
+    const imageId = activeImage?.id;
+    if (!imageId) return;
+    const history = useHistoryStore.getState();
+    const entry = history.popRedo(imageId);
+    if (!entry) return;
+    history.setRestoring(true);
+    try {
+      if (entry.op === "create") {
+        const created = await createAnnotation.mutateAsync(entry.snapshot);
+        entry.id = created.id;
+        history.pushUndoRaw(imageId, entry);
+      } else if (entry.op === "delete") {
+        if (entry.id > 0) await deleteAnnotation.mutateAsync(entry.id);
+        history.pushUndoRaw(imageId, entry);
+      } else {
+        await updateAnnotation.mutateAsync({ id: entry.id, input: entry.after });
+        history.pushUndoRaw(imageId, entry);
+      }
+    } catch {
+      toast({ title: "Nothing to redo anymore", variant: "info" });
+    } finally {
+      useHistoryStore.getState().setRestoring(false);
+    }
+  };
+
+  // ---- global viewer shortcuts (inputs keep their normal editing behavior) ----
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -79,13 +181,40 @@ export function AnnotateView() {
         return;
       }
       const store = useAnnotateStore.getState();
+
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === "z") {
+          event.preventDefault();
+          if (event.shiftKey) void redo();
+          else void undo();
+        } else if (key === "y") {
+          event.preventDefault();
+          void redo();
+        } else if (key === "d") {
+          event.preventDefault();
+          const selected = annotations?.find((a) => a.id === store.selectedAnnotationId);
+          if (selected && selected.id > 0) duplicateShape(selected);
+        }
+        return;
+      }
+
       switch (event.key) {
         case "Escape":
           if (store.draftPoints.length > 0) store.clearDraft();
           else store.setSelected(null);
           break;
+        case "Enter":
+          if (
+            (store.tool === "polygon" && store.draftPoints.length >= 3) ||
+            (store.tool === "polyline" && store.draftPoints.length >= 2)
+          ) {
+            handleCreateShape(store.draftPoints, store.tool);
+            store.clearDraft();
+          }
+          break;
         case "Backspace":
-          if (store.mode === "draw" && store.draftPoints.length > 0) {
+          if (store.tool !== "select" && store.draftPoints.length > 0) {
             event.preventDefault();
             store.popDraftPoint();
             break;
@@ -104,12 +233,22 @@ export function AnnotateView() {
         case "ArrowRight":
           navigate(1);
           break;
-        case "d":
-          store.setMode("draw");
-          break;
         case "v":
         case "s":
-          store.setMode("select");
+          store.setTool("select");
+          break;
+        case "p":
+        case "d":
+          store.setTool("polygon");
+          break;
+        case "r":
+          store.setTool("rectangle");
+          break;
+        case "l":
+          store.setTool("polyline");
+          break;
+        case "o":
+          store.setTool("point");
           break;
         case "h":
           store.toggleAnnotationsVisible();
@@ -119,7 +258,7 @@ export function AnnotateView() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images, activeIndex, activeImage?.id]);
+  }, [images, activeIndex, activeImage?.id, annotations]);
 
   if (isPending) {
     return (
@@ -191,15 +330,20 @@ export function AnnotateView() {
             index={activeIndex}
             total={images.length}
             onNavigate={navigate}
-            onCreatePolygon={handleCreatePolygon}
-            onUpdatePolygon={handleUpdatePolygon}
+            onCreateShape={handleCreateShape}
+            onUpdateShape={handleUpdateShape}
           />
         )}
       </div>
 
       <aside className="flex w-full shrink-0 flex-col border-t border-border bg-surface lg:w-64 lg:overflow-y-auto lg:border-t-0 lg:border-l">
         <Toolbar />
-        <SelectionPanel image={activeImage} />
+        <SelectionPanel
+          image={activeImage}
+          hasNext={nextImage !== null}
+          onDuplicate={duplicateShape}
+          onCopyToNext={copyToNext}
+        />
         <AnnotationList image={activeImage} />
       </aside>
 

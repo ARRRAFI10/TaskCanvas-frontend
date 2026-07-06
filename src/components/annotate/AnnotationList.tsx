@@ -3,7 +3,7 @@
 import { Download, Eye, EyeOff, Trash2 } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/Skeleton";
-import { formatArea } from "@/lib/geometry";
+import { shapeMetric } from "@/lib/geometry";
 import { useAnnotations, useDeleteAnnotation } from "@/lib/hooks/useAnnotations";
 import { useAnnotateStore } from "@/lib/stores/annotateStore";
 import type { ImageItem } from "@/lib/types";
@@ -18,7 +18,7 @@ export function AnnotationList({ image }: { image: ImageItem | null }) {
   const showAnnotations = useAnnotateStore((state) => state.showAnnotations);
   const hiddenIds = useAnnotateStore((state) => state.hiddenIds);
   const setSelected = useAnnotateStore((state) => state.setSelected);
-  const setMode = useAnnotateStore((state) => state.setMode);
+  const setTool = useAnnotateStore((state) => state.setTool);
   const toggleHidden = useAnnotateStore((state) => state.toggleHidden);
   const toggleAllVisible = useAnnotateStore((state) => state.toggleAnnotationsVisible);
 
@@ -29,7 +29,7 @@ export function AnnotationList({ image }: { image: ImageItem | null }) {
       exported_at: new Date().toISOString(),
       annotations: annotations
         .filter((annotation) => annotation.id > 0)
-        .map(({ label, color, points }) => ({ label, color, points })),
+        .map(({ shape_type, label, color, points }) => ({ shape_type, label, color, points })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -99,7 +99,7 @@ export function AnnotationList({ image }: { image: ImageItem | null }) {
                 <button
                   type="button"
                   onClick={() => {
-                    setMode("select");
+                    setTool("select");
                     setSelected(annotation.id);
                   }}
                   className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
@@ -111,12 +111,11 @@ export function AnnotationList({ image }: { image: ImageItem | null }) {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium text-foreground">
-                      {annotation.label || `Polygon ${index + 1}`}
+                      {annotation.label || `Shape ${index + 1}`}
                     </span>
-                    <span className="text-[10px] text-faint">
-                      {annotation.points.length} vertices
-                      {image &&
-                        ` · ${formatArea(annotation.points, image.width, image.height).split(" · ")[0]}`}
+                    <span className="block truncate text-[10px] text-faint">
+                      {annotation.shape_type}
+                      {image && ` · ${shapeMetric(annotation, image.width, image.height)}`}
                     </span>
                   </span>
                 </button>
@@ -147,8 +146,8 @@ export function AnnotationList({ image }: { image: ImageItem | null }) {
           })
         ) : (
           <p className="rounded-md border border-dashed border-border p-3 text-[11px] leading-relaxed text-faint">
-            No polygons on this image yet. Press <span className="font-mono">d</span> and start
-            clicking on the image to outline a region.
+            No shapes on this image yet. Pick a tool (<span className="font-mono">p</span> for
+            polygon, <span className="font-mono">r</span> for box) and start on the image.
           </p>
         )}
       </div>
