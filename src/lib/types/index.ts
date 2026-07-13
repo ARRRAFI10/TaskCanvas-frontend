@@ -13,6 +13,14 @@ export interface LoginResponse {
   user: User;
 }
 
+/** Signup returns the same session shape as login, so the client can sign in at once. */
+export interface RegisterInput {
+  email: string;
+  password: string;
+  first_name?: string;
+  last_name?: string;
+}
+
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 

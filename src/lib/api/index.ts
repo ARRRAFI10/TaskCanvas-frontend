@@ -4,6 +4,7 @@ import type {
   AnnotationInput,
   ImageItem,
   LoginResponse,
+  RegisterInput,
   Task,
   TaskInput,
   TaskMoveInput,
@@ -16,6 +17,11 @@ export const api = {
   auth: {
     login: (payload: { email: string; password: string }) =>
       apiFetch<LoginResponse>("/api/auth/login/", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    register: (payload: RegisterInput) =>
+      apiFetch<LoginResponse>("/api/auth/register/", {
         method: "POST",
         body: JSON.stringify(payload),
       }),

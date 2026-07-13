@@ -2,9 +2,9 @@ import { KanbanSquare, PenTool, ScanLine } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { LoginForm } from "@/components/auth/LoginForm";
+import { SignupForm } from "@/components/auth/SignupForm";
 
-export const metadata: Metadata = { title: "Sign in — TaskCanvas" };
+export const metadata: Metadata = { title: "Create account — TaskCanvas" };
 
 const features = [
   { icon: KanbanSquare, text: "Plan every day on a drag-and-drop Kanban board" },
@@ -12,7 +12,7 @@ const features = [
   { icon: ScanLine, text: "Stack-scroll image series like a radiology viewer" },
 ];
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <div className="flex min-h-dvh">
       {/* Brand panel */}
@@ -51,17 +51,19 @@ export default function LoginPage() {
             <p className="text-lg font-semibold tracking-tight lg:hidden">
               Task<span className="text-accent">Canvas</span>
             </p>
-            <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
-            <p className="text-sm text-muted">Sign in to your board and image library.</p>
+            <h2 className="text-2xl font-semibold tracking-tight">Create your account</h2>
+            <p className="text-sm text-muted">
+              Your own board and image library, empty and ready.
+            </p>
           </div>
-          <LoginForm />
+          <SignupForm />
           <p className="mt-6 text-center text-sm text-muted">
-            Don&apos;t have an account?{" "}
+            Already have an account?{" "}
             <Link
-              href="/register"
+              href="/login"
               className="font-medium text-accent underline-offset-4 hover:underline"
             >
-              Create one
+              Sign in
             </Link>
           </p>
         </div>
