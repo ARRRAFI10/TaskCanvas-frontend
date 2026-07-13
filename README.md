@@ -11,6 +11,9 @@ The Django API lives in its own repository: **taskcanvas-backend**.
 | Backend repo | https://github.com/ARRRAFI10/TaskCanvas-backend |
 | Demo login | `demo@taskcanvas.app` / `TaskCanvas#2026` |
 
+You can also **create your own account** at [`/register`](https://task-canvas-frontend-nu.vercel.app/register) —
+no email confirmation; you land on your own empty board and image library.
+
 ## What's inside
 
 - **`/tasks`** — a date-driven Kanban board: reusable `<DateSelector/>` (week strip +
