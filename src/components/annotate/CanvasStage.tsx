@@ -22,6 +22,9 @@ const MIN_POINTS: Record<ShapeType, number> = { polygon: 3, polyline: 2, rectang
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
+const ZOOM_BUTTON_CLASS =
+  "cursor-pointer rounded-md p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-muted";
+
 const TOOL_HINTS: Record<string, string> = {
   select:
     "click to select · drag body or handles to edit · edge dots add vertices · dbl-click a handle removes it",
@@ -54,6 +57,9 @@ function useHtmlImage(src: string) {
 
   useEffect(() => {
     const img = new window.Image();
+    // Without this the canvas is tainted by the cross-origin media URL and
+    // Konva filters (getImageData) throw a SecurityError.
+    img.crossOrigin = "anonymous";
     img.onload = () => setState({ key, image: img, status: "loaded" });
     img.onerror = () => setState({ key, image: null, status: "error" });
     img.src = src;
@@ -195,6 +201,31 @@ export default function CanvasStage({
     });
     setZoom(newZoom);
   };
+
+  /** Button/keyboard zoom: steps around the viewport center. */
+  const zoomBy = (factor: number) =>
+    applyZoom(zoom * factor, { x: size.width / 2, y: size.height / 2 });
+
+  // The window-level listener subscribes once; the ref keeps it on fresh state.
+  const zoomShortcutsRef = useRef({ zoomBy, resetView });
+  useEffect(() => {
+    zoomShortcutsRef.current = { zoomBy, resetView };
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) return; // leave browser zoom alone
+      if (event.key === "+" || event.key === "=") zoomShortcutsRef.current.zoomBy(BUTTON_ZOOM_STEP);
+      else if (event.key === "-" || event.key === "_")
+        zoomShortcutsRef.current.zoomBy(1 / BUTTON_ZOOM_STEP);
+      else if (event.key === "0") zoomShortcutsRef.current.resetView();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // ---- interactions ---------------------------------------------------------
   const handleWheel = (event: KonvaEventObject<WheelEvent>) => {
@@ -742,6 +773,46 @@ export default function CanvasStage({
             </Layer>
           </Stage>
         )}
+
+        {/* Floating zoom controls */}
+        {fits && bitmap.status === "loaded" && bitmap.image && (
+          <div className="absolute right-3 top-3 flex flex-col items-center rounded-lg border border-border bg-surface/85 p-1 shadow-lg backdrop-blur-sm">
+            <button
+              type="button"
+              aria-label="Zoom in"
+              title="Zoom in (+ or Ctrl+wheel)"
+              disabled={zoom >= MAX_ZOOM}
+              onClick={() => zoomBy(BUTTON_ZOOM_STEP)}
+              className={ZOOM_BUTTON_CLASS}
+            >
+              <ZoomIn className="size-4" />
+            </button>
+            <span className="w-full select-none py-0.5 text-center font-mono text-[10px] text-muted">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              title="Zoom out (− or Ctrl+wheel)"
+              disabled={zoom <= MIN_ZOOM}
+              onClick={() => zoomBy(1 / BUTTON_ZOOM_STEP)}
+              className={ZOOM_BUTTON_CLASS}
+            >
+              <ZoomOut className="size-4" />
+            </button>
+            <div className="my-1 h-px w-5 bg-border" />
+            <button
+              type="button"
+              aria-label="Fit to view"
+              title="Fit to view (0)"
+              disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+              onClick={resetView}
+              className={ZOOM_BUTTON_CLASS}
+            >
+              <Maximize className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* PACS-style status bar */}
@@ -766,9 +837,7 @@ export default function CanvasStage({
           <button
             type="button"
             aria-label="Zoom out"
-            onClick={() =>
-              applyZoom(zoom / BUTTON_ZOOM_STEP, { x: size.width / 2, y: size.height / 2 })
-            }
+            onClick={() => zoomBy(1 / BUTTON_ZOOM_STEP)}
             className="cursor-pointer rounded p-0.5 transition-colors hover:bg-surface-raised hover:text-foreground"
           >
             <ZoomOut className="size-3.5" />
@@ -777,9 +846,7 @@ export default function CanvasStage({
           <button
             type="button"
             aria-label="Zoom in"
-            onClick={() =>
-              applyZoom(zoom * BUTTON_ZOOM_STEP, { x: size.width / 2, y: size.height / 2 })
-            }
+            onClick={() => zoomBy(BUTTON_ZOOM_STEP)}
             className="cursor-pointer rounded p-0.5 transition-colors hover:bg-surface-raised hover:text-foreground"
           >
             <ZoomIn className="size-3.5" />
