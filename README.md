@@ -6,9 +6,9 @@ The Django API lives in its own repository: **taskcanvas-backend**.
 
 | | |
 |---|---|
-| Live app | `https://<project>.vercel.app` *(link added after deploy)* |
-| Backend repo | `https://github.com/<you>/taskcanvas-backend` |
-| Live API | `https://<username>.pythonanywhere.com` |
+| Live app | https://task-canvas-frontend-nu.vercel.app |
+| Live API | https://arrrafi10.pythonanywhere.com |
+| Backend repo | https://github.com/ARRRAFI10/TaskCanvas-backend |
 | Demo login | `demo@taskcanvas.app` / `TaskCanvas#2026` |
 
 ## What's inside
@@ -73,8 +73,8 @@ The app expects the Django API running locally — see the backend README
 (migrate + `seed_demo` + `runserver`) first.
 
 ```bash
-git clone https://github.com/<you>/taskcanvas-frontend.git
-cd taskcanvas-frontend
+git clone https://github.com/ARRRAFI10/TaskCanvas-frontend.git
+cd TaskCanvas-frontend
 
 npm install
 cp .env.example .env.local     # NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
